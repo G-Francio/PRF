@@ -1,20 +1,15 @@
-import numpy
+import numpy as np
 from numba import jit
 
-from . import best_split
-from . import misc_functions as m
-
-# from importlib import reload
-# reload(m)
-# reload(best_split)
-
-cache = False
+from PRF import best_split
+from PRF import misc_functions as m
 
 
 class _tree:
     """
     This is the recursive binary tree implementation.
     """
+
     def __init__(
         self,
         feature_index=-1,
@@ -29,39 +24,48 @@ class _tree:
         self.true_branch = true_branch
         self.false_branch = false_branch
         self.p_right = p_right
-        self.results = results  # None for nodes, not None for leaves # TODO: decide what you want to do with this.
+        self.results = results
+        # FGU comment:
+        #  None for nodes, not None for leaves
+        # Original comment: 
+        #  TODO: decide what you want to do with this.
 
     def get_node_list(self, node_list, this_node, node_idx):
-
         node_idx_right = node_idx + 1
         last_node_left_branch = node_idx
-        if type(this_node.true_branch) != type(None):
+        if this_node.true_branch is not None:
             last_node_right_branch, node_list = self.get_node_list(
-                node_list, this_node.true_branch, node_idx_right)
+                node_list, this_node.true_branch, node_idx_right
+            )
             node_idx_left = last_node_right_branch + 1
             last_node_left_branch, node_list = self.get_node_list(
-                node_list, this_node.false_branch, node_idx_left)
+                node_list, this_node.false_branch, node_idx_left
+            )
 
-        if type(this_node.results) != type(None):
-            node_list.append([
-                node_idx,
-                this_node.feature_index,
-                this_node.feature_threshold,
-                None,
-                None,
-                this_node.results,
-                None,
-            ])
+        if this_node.results is not None:
+            node_list.append(
+                [
+                    node_idx,
+                    this_node.feature_index,
+                    this_node.feature_threshold,
+                    None,
+                    None,
+                    this_node.results,
+                    None,
+                ]
+            )
         else:
-            node_list.append([
-                node_idx,
-                this_node.feature_index,
-                this_node.feature_threshold,
-                node_idx_right,
-                node_idx_left,
-                None,
-                this_node.p_right,
-            ])
+            node_list.append(
+                [
+                    node_idx,
+                    this_node.feature_index,
+                    this_node.feature_threshold,
+                    node_idx_right,
+                    node_idx_left,
+                    None,
+                    this_node.p_right,
+                ]
+            )
 
         return last_node_left_branch, node_list
 
@@ -77,29 +81,25 @@ class _tree:
 ############################################################
 
 
-# @jit(cache=True, nopython=True)
+@jit
 def default_synthetic_data(X):
     """
     Synthetic data with same marginal distribution for each feature
     """
-    synthetic_X = numpy.zeros(X.shape)
+    synthetic_X = np.zeros(X.shape)
 
     nof_features = X.shape[1]
     nof_objects = X.shape[0]
 
     for f in range(nof_features):
         feature_values = X[:, f]
-        synthetic_X[:, f] += numpy.random.choice(feature_values, nof_objects)
+        synthetic_X[:, f] += np.random.choice(feature_values, nof_objects)
     return synthetic_X
 
 
-# @jit(cache=True, nopython=True)
+@jit
 def get_synthetic_data(X, dX, py, py_remove, pnode, is_max):
-
-    # if (len(numpy.unique(y)) == 1):
-    #    y= numpy.zeros(len(y), dtype = int)
-
-    real_inds = numpy.where(py[:, 1] == 0)[0]
+    real_inds = np.where(py[:, 1] == 0)[0]
     X_real = X[real_inds]
     dX_real = dX[real_inds]
     py_real = py[real_inds]
@@ -112,18 +112,18 @@ def get_synthetic_data(X, dX, py, py_remove, pnode, is_max):
     X_syn = default_synthetic_data(X_real)
     dX_syn = default_synthetic_data(dX_real)
 
-    X_new = numpy.vstack([X_real, X_syn])
-    dX_new = numpy.vstack([dX_real, dX_syn])
+    X_new = np.vstack([X_real, X_syn])
+    dX_new = np.vstack([dX_real, dX_syn])
 
-    py_new = numpy.zeros([X_new.shape[0], 2])
+    py_new = np.zeros([X_new.shape[0], 2])
     py_new[:n_real, 0] = py_real[:, 0]  # Class 'real'
     py_new[n_real:, 1] = py_real[:, 0]
 
-    pnode_new = numpy.zeros([X_new.shape[0]])
+    pnode_new = np.zeros([X_new.shape[0]])
     pnode_new[:n_real] = pnode_real
     pnode_new[n_real:] = pnode_real
 
-    is_max_new = numpy.concatenate([is_max_real, is_max_real])
+    is_max_new = np.concatenate([is_max_real, is_max_real])
 
     return X_new, dX_new, py_new, py_new, pnode_new, is_max_new
 
@@ -173,14 +173,13 @@ def fit_tree(
         if depth == 0:
             new_syn_data = True
         elif n_objects_node > 50:
-            if numpy.random.rand() < new_syn_data_frac:
+            if np.random.rand() < new_syn_data_frac:
                 new_syn_data = True
 
         if new_syn_data:
-            # print('before:', X.shape, dX.shape, py_gini.shape, py_leafs.shape, pnode.shape, is_max.shape)
             X, dX, py_gini, py_leafs, pnode, is_max = get_synthetic_data(
-                X, dX, py_gini, py_leafs, pnode, is_max)
-            # print('after:', X.shape, dX.shape, py_gini.shape, py_leafs.shape, pnode.shape, is_max.shape)
+                X, dX, py_gini, py_leafs, pnode, is_max
+            )
             n_objects_node = X.shape[0]
 
     max_depth = depth + 1
@@ -188,14 +187,15 @@ def fit_tree(
         max_depth = tree_max_depth
 
     if depth < max_depth:
-        scaled_py_gini = numpy.multiply(py_gini, pnode[:, numpy.newaxis])
+        scaled_py_gini = np.multiply(py_gini, pnode[:, np.newaxis])
 
-        current_score, normalization, class_p_arr = best_split._gini_init(
-            scaled_py_gini)
+        current_score, _, _ = best_split._gini_init(
+            scaled_py_gini
+        )
         features_chosen_indices = m.choose_features(n_features, max_features)
         best_gain, best_attribute, best_attribute_value = best_split.get_best_split(
-            X, scaled_py_gini, current_score, features_chosen_indices,
-            max_features)
+            X, scaled_py_gini, current_score, features_chosen_indices, max_features
+        )
 
         # Caclculate split probabilities for each object
         if best_gain > 0:
@@ -214,13 +214,13 @@ def fit_tree(
                 is_max_right,
                 is_max_left,
                 pnode_right_tot,
-            ) = m.get_split_objects(pnode, p_split_right, p_split_left, is_max,
-                                    n_objects_node, keep_proba)
+            ) = m.get_split_objects(
+                pnode, p_split_right, p_split_left, is_max, n_objects_node, keep_proba
+            )
 
             # Check if the best split is valid (that is not a useless 0-everything split)
             th = min_py_sum_leaf
-            if (numpy.sum(pnode_right) >= th) and (numpy.sum(pnode_left) >=
-                                                   th):
+            if (np.sum(pnode_right) >= th) and (np.sum(pnode_left) >= th):
                 # add the impurity of the best split into the feature importance value
                 p = scaled_py_gini.sum() / tree_n_samples
                 feature_importances[best_attribute] += p * best_gain
@@ -228,12 +228,11 @@ def fit_tree(
                 # Split all the arrays according to the indicies we have for the object in each side of the split
                 X_right, X_left = m.pull_values(X, best_right, best_left)
                 dX_right, dX_left = m.pull_values(dX, best_right, best_left)
-                py_right, py_left = m.pull_values(py_gini, best_right,
-                                                  best_left)
-                flags_right, flags_left = m.pull_values(
-                    flags, best_right, best_left)
+                py_right, py_left = m.pull_values(py_gini, best_right, best_left)
+                flags_right, flags_left = m.pull_values(flags, best_right, best_left)
                 py_leafs_right, py_leafs_left = m.pull_values(
-                    py_leafs, best_right, best_left)
+                    py_leafs, best_right, best_left
+                )
 
                 # go to the next steps of the recursive process
                 depth = depth + 1
@@ -284,7 +283,7 @@ def fit_tree(
 
     class_probas = m.return_class_probas(pnode, py_leafs)
     # if len(pnode) > 2500:
-    #    print(len(pnode), best_gain, len(pnode_right), len(pnode_left), numpy.mean(p_split_right), numpy.mean(dX[:,best_attribute]), numpy.nanmin(X[:,best_attribute]), numpy.nanmax(X[:,best_attribute]), best_attribute_value )
+    #    print(len(pnode), best_gain, len(pnode_right), len(pnode_left), np.mean(p_split_right), np.mean(dX[:,best_attribute]), np.nanmin(X[:,best_attribute]), np.nanmax(X[:,best_attribute]), best_attribute_value )
     return _tree(results=class_probas)
 
 
@@ -299,7 +298,7 @@ def fit_tree(
 ############################################################
 
 
-@jit(cache=cache, nopython=True)
+@jit
 def predict_all(
     node_tree_results,
     node_feature_idx,
@@ -313,10 +312,9 @@ def predict_all(
     keep_proba,
     return_leafs,
 ):
-
     nof_objects = X.shape[0]
     nof_classes = len(node_tree_results[0])
-    result = numpy.zeros((nof_objects, nof_classes))
+    result = np.zeros((nof_objects, nof_classes))
     curr_node = 0
     for i in range(nof_objects):
         result[i] = predict_single(
@@ -338,7 +336,7 @@ def predict_all(
     return result
 
 
-@jit(cache=cache, nopython=True)
+@jit
 def predict_single(
     node_tree_results,
     node_feature_idx,
@@ -356,8 +354,8 @@ def predict_single(
     return_leafs=False,
 ):
     """
-        function classifies a single object according to the trained tree
-        """
+    function classifies a single object according to the trained tree
+    """
     node = curr_node
     tree_results = node_tree_results[curr_node]
     tree_feature_index = node_feature_idx[curr_node]
@@ -374,14 +372,13 @@ def predict_single(
         else:
             summed_prediction = tree_results * p_tree
     else:
-        summed_prediction = numpy.zeros(nof_classes)
+        summed_prediction = np.zeros(nof_classes)
         if is_max:
             val = x[tree_feature_index]
             delta = dx[tree_feature_index]
             current_flag = flag[tree_feature_index]
-            p_split = m.split_probability(val, delta, current_flag,
-                                          tree_feature_th)
-            if numpy.isnan(p_split):
+            p_split = m.split_probability(val, delta, current_flag, tree_feature_th)
+            if np.isnan(p_split):
                 p_split = p_right_node
 
             p_true = p_tree * p_split
@@ -435,10 +432,9 @@ def predict_single(
             val = x[tree_feature_index]
             delta = dx[tree_feature_index]
             current_flag = flag[tree_feature_index]
-            p_split = m.split_probability(val, delta, current_flag,
-                                          tree_feature_th)
+            p_split = m.split_probability(val, delta, current_flag, tree_feature_th)
 
-            if numpy.isnan(p_split):
+            if np.isnan(p_split):
                 p_split = p_right_node
 
             p_true = p_tree * p_split
