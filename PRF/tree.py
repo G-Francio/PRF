@@ -27,7 +27,7 @@ class _tree:
         self.results = results
         # FGU comment:
         #  None for nodes, not None for leaves
-        # Original comment: 
+        # Original comment:
         #  TODO: decide what you want to do with this.
 
     def get_node_list(self, node_list, this_node, node_idx):
@@ -189,9 +189,7 @@ def fit_tree(
     if depth < max_depth:
         scaled_py_gini = np.multiply(py_gini, pnode[:, np.newaxis])
 
-        current_score, _, _ = best_split._gini_init(
-            scaled_py_gini
-        )
+        current_score, _, _ = best_split._gini_init(scaled_py_gini)
         features_chosen_indices = m.choose_features(n_features, max_features)
         best_gain, best_attribute, best_attribute_value = best_split.get_best_split(
             X, scaled_py_gini, current_score, features_chosen_indices, max_features
