@@ -190,7 +190,7 @@ def fit_tree(
         scaled_py_gini = np.multiply(py_gini, pnode[:, np.newaxis])
 
         current_score, _, _ = best_split._gini_init(scaled_py_gini)
-        features_chosen_indices = m.choose_features(n_features, max_features)
+        features_chosen_indices = m.choose_features(n_features)
         best_gain, best_attribute, best_attribute_value = best_split.get_best_split(
             X, scaled_py_gini, current_score, features_chosen_indices, max_features
         )
@@ -376,7 +376,9 @@ def predict_single(
             delta = dx[tree_feature_index]
             current_flag = flag[tree_feature_index]
             p_split = m.split_probability(val, delta, current_flag, tree_feature_th)
-            if np.isnan(p_split):
+            
+            if p_split != p_split:
+                # p_split is nan
                 p_split = p_right_node
 
             p_true = p_tree * p_split
@@ -432,7 +434,8 @@ def predict_single(
             current_flag = flag[tree_feature_index]
             p_split = m.split_probability(val, delta, current_flag, tree_feature_th)
 
-            if np.isnan(p_split):
+            if p_split != p_split:
+                # p_split is nan
                 p_split = p_right_node
 
             p_true = p_tree * p_split

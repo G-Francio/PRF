@@ -10,8 +10,13 @@ from scipy.stats import norm
 K = 10
 
 # Precompute the distribution, extrema go from 0 to MAX_LM
-MAX_LM = K
-X_LM = np.arange(0, MAX_LM, 0.01)
+LOW_LM = 0
+HIGH_LM = K
+STEP_LM = 0.01
+ONE_OVER_STEP_LM = 1 / STEP_LM
+
+X_LM = np.arange(LOW_LM, HIGH_LM, STEP_LM)
+LEN_A_LM = len(X_LM)
 
 
 # build cumulative distribution
@@ -23,15 +28,15 @@ def LMCumDist(u):
     return quad(LMDist, 0, u)[0]
 
 
-# Trasformo nella versione vettorizzata
+# Vectorized version
 vectLMCumDist = np.vectorize(LMCumDist)
 
-# Calcolo sui valori tabulati
+# Tabulate values
 LM_VALUES = vectLMCumDist(X_LM)
 LM_VALUES = np.append(LM_VALUES, 1)
 
-print("K Value: {}".format(K))
-print("Considering upper limits")
+# print("K Value: {}".format(K))
+# print("Considering upper limits")
 
 ############################################################
 ############################################################
@@ -40,14 +45,26 @@ print("Considering upper limits")
 ############################################################
 
 # grid is finer than original one
-N_SIGMA = 3
-X_GAUS = np.arange(-N_SIGMA, N_SIGMA, 0.01)
+LOW_GAUSS = -3
+HIGH_GAUSS = 3
+STEP_GAUSS = 0.1
+ONE_OVER_STEP_GAUSS = 1 / STEP_GAUSS
+
+X_GAUS = np.arange(LOW_GAUSS, HIGH_GAUSS, STEP_GAUSS)
+LEN_A_GAUSS = len(X_GAUS)
+
 GAUS = np.array(norm(0, 1).cdf(X_GAUS))
 GAUS = np.append(GAUS, 1)
 
+# No need to use seachsorted, the list is sorted and equally spaced!
 
-# TODO: This function needs some clean up and a _check_flag somewhere
-#  to preprocess things, it is such a mess
+
+@jit
+def searchsorted_sorted(v, low, one_over_step):
+    ind = int((v - low) * one_over_step) + 1
+    return ind
+
+
 @jit
 def split_probability(value, delta, flag, threshold):
     """
@@ -55,31 +72,38 @@ def split_probability(value, delta, flag, threshold):
     """
     # flag != 0 -> upper limit (carries info for turnover)
 
-    if np.isnan(value):
+    if value != value:
+        # value is np.nan
         return np.nan
 
-    if int(round(flag)) == 0 and not np.isnan(delta) and delta != 0:
+    # This assumes the flags are zero for non flagged objects
+    bool_ = delta == delta and delta != 0
+    # not np.isnan(delta) is equivalent to delta == delta
+
+    if flag == 0.0 and bool_:
         normalized_threshold = (threshold - value) / delta
-        if normalized_threshold <= -N_SIGMA:
+        if normalized_threshold <= LOW_GAUSS:
             split_proba = 0
-        elif normalized_threshold >= N_SIGMA:
+        elif normalized_threshold >= HIGH_GAUSS:
             split_proba = 1
         else:
-            x = np.searchsorted(
-                a=X_GAUS,
-                v=normalized_threshold,
+            x = searchsorted_sorted(
+                normalized_threshold,
+                LOW_GAUSS,
+                ONE_OVER_STEP_GAUSS,
             )
             split_proba = GAUS[x]
-    elif int(round(flag)) != 0 and not np.isnan(delta) and delta != 0:
+    elif flag != 0.0 and bool_:
         normalized_threshold = (threshold - flag) / delta
         if normalized_threshold <= 0:
             split_proba = 0
-        elif normalized_threshold >= MAX_LM:
+        elif normalized_threshold >= HIGH_LM:
             split_proba = 1
         else:
-            x = np.searchsorted(
-                a=X_LM,
-                v=normalized_threshold,
+            x = searchsorted_sorted(
+                normalized_threshold,
+                LOW_LM,
+                ONE_OVER_STEP_LM,
             )
             split_proba = LM_VALUES[x]
     else:
@@ -206,7 +230,7 @@ def choose_features(nof_features):
     return features_chosen
 
 
-# @jit
+@jit
 def pull_values(A, right, left):
     """
     Splits an array A to two

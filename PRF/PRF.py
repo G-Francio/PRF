@@ -1,5 +1,8 @@
+import warnings
+
 import numpy as np
 from joblib import Parallel, delayed
+from tqdm import tqdm
 
 from PRF import misc_functions as m
 from PRF import tree
@@ -177,7 +180,7 @@ class RandomForestClassifier:
         bootstrap=True,
         new_syn_data_frac=0,
         min_py_sum_leaf=1,
-        ncpu=None,
+        n_jobs=1,
     ):
         self.n_estimators_ = n_estimators
         self.criterion = criterion
@@ -190,7 +193,7 @@ class RandomForestClassifier:
         self.bootstrap = bootstrap
         self.new_syn_data_frac = new_syn_data_frac
         self.min_py_sum_leaf = min_py_sum_leaf
-        self.ncpu = ncpu
+        self.n_jobs = n_jobs
 
     def check_input_X(self, X, dX, flags):
         if dX is None:
@@ -278,23 +281,25 @@ class RandomForestClassifier:
             self.n_classes_ = py.shape[1]
             self.label_dict = {i: i for i in range(self.n_classes_)}
         else:
-            raise UserWarning("Both of {y, py} are given, ignoring y")
+            # Change this into a warning.warn, otherwise this piece of code
+            #  is not even reachable
+            warnings.warn("Both of {y, py} are given, ignoring y")
             self.n_classes_ = py.shape[1]
             self.label_dict = {i: i for i in range(self.n_classes_)}
 
         X, dX, flags = self.check_input_X(X, dX, flags)
 
         # Re-enable pooling
-        if self.ncpu is not None:
-            tree_list = Parallel(n_jobs=self.ncpu, verbose=0)(
-                delayed(self._fit_single_tree)(X, dX, py, flags)
-                for i in range(self.n_estimators_)
-            )
+        if self.n_jobs == 1:
+            tree_list = []
+            for _ in tqdm(range(self.n_estimators_)):
+                tree_list.append(self._fit_single_tree(X, dX, py, flags))
         else:
-            tree_list = [
-                self._fit_single_tree(X, dX, py, flags)
-                for i in range(self.n_estimators_)
-            ]
+            tree_list = Parallel(n_jobs=self.n_jobs, verbose=0)(
+                delayed(self._fit_single_tree)(X, dX, py, flags)
+                for _ in range(self.n_estimators_)
+            )
+
         self.estimators_ = []
         for tree_i in tree_list:
             self.estimators_.append(tree_i)
@@ -339,34 +344,12 @@ class RandomForestClassifier:
         """
         The RandomForestClassifier.predict() function with a similar appearance to that of sklearn
         """
+        proba = np.zeros((X.shape[0], self.n_classes_), dtype=float)
         X, dX, flags = self.check_input_X(X, dX, flags)
 
-        # See here for the solution: https://stackoverflow.com/q/34140560
-        def _predict_proba(_tree, _proba, _X=X, _dX=dX, _flags=flags):
-            _tree.node_arr_init()
-            self.predict_single_tree(_tree.predict_proba, _X, _dX, _flags, _proba)
-
-        if self.ncpu is not None:
-            import os
-            import tempfile
-
-            tmp_path = tempfile.mkdtemp()
-            mmap_path = os.path.join(tmp_path, "proba.mmap")
-
-            proba = np.memmap(
-                mmap_path,
-                dtype=np.float64,
-                shape=(X.shape[0], self.n_classes_),
-                mode="w+",
-            )
-
-            Parallel(n_jobs=self.ncpu)(
-                delayed(_predict_proba)(tree_, proba, X, dX, flags)
-                for tree_ in self.estimators_
-            )
-        else:
-            for tree_ in self.estimators_:
-                _predict_proba(tree_, _proba=proba, _X=X, _dX=dX, _flags=flags)
+        for _, tree_i in tqdm(enumerate(self.estimators_)):
+            tree_i.node_arr_init()
+            self.predict_single_tree(tree_i.predict_proba, X, dX, flags, proba)
 
         proba = [p / np.sum(p) for p in proba]
 
@@ -388,7 +371,7 @@ class RandomForestClassifier:
 
         return leafs
 
-    def predict(self, X, dX=None, flags=None, return_leafs=False):
+    def predict(self, X, dX=None, flags=None):
         y_pred_inds = np.argmax(self.predict_proba(X, dX, flags), axis=1)
         y_pred = np.array([self.label_dict[i] for i in y_pred_inds])
         return y_pred
